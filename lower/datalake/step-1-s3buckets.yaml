@@ -1,0 +1,86 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates S3 buckets for bu-datalake-ingestion 
+
+Parameters:
+  
+  EnvironmentName:
+    Type: String
+    Description: "Environment Name"
+    AllowedValues:
+      - development
+      - sandbox
+      - staging
+      - production
+    Default: staging
+
+Resources:
+  
+  BUDatalakeIngestionStreamS3Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Sub ${EnvironmentName}-bu-redshift-load-${AWS::AccountId}
+  
+  BUDatalakeBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Sub ${EnvironmentName}-budatalake-${AWS::AccountId}
+
+  BUETLProcessingBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Sub ${EnvironmentName}-buetlprocessing-${AWS::AccountId}
+
+  BURedshiftloadunloadBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Sub ${EnvironmentName}-bu-redshift-load-unload-${AWS::AccountId}
+
+  BULambdaCodeBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Sub ${EnvironmentName}-bu-parser-lambda-code-${AWS::AccountId}
+
+Outputs:
+
+  BUDatalakeIngestionStreamS3BucketARN:
+    Description: The ARN of the s3 bucket
+    Value:
+      Fn::GetAtt:
+        - 'BUDatalakeIngestionStreamS3Bucket'
+        - 'Arn'
+    Export:
+      Name: !Sub ${EnvironmentName}:BUDatalakeIngestionStreamS3BucketARN
+  
+  BUDatalakeBucketARN:
+    Description: The ARN of the s3 bucket
+    Value:
+      Fn::GetAtt:
+        - 'BUDatalakeBucket'
+        - 'Arn'
+    Export:
+      Name: !Sub ${EnvironmentName}:BUDatalakeBucketARN
+  
+  BUETLProcessingBucketARN:
+    Description: The ARN of the s3 bucket
+    Value:
+      Fn::GetAtt:
+        - 'BUETLProcessingBucket'
+        - 'Arn'
+    Export:
+      Name: !Sub ${EnvironmentName}:BUETLProcessingBucketARN
+
+  BURedshiftloadunloadBucketARN:
+    Description: The ARN of the s3 bucket
+    Value:
+      Fn::GetAtt:
+        - 'BURedshiftloadunloadBucket'
+        - 'Arn'
+    Export:
+      Name: !Sub ${EnvironmentName}:BURedshiftloadunloadBucketARN
+
+
+
+
+
+
+

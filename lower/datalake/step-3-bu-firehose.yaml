@@ -1,0 +1,246 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates bu-datalake-ingestion lambda, Kinesis firehose, log groups, bucket and IAM roles
+
+Parameters:
+  
+  EnvironmentName:
+    Type: String
+    Description: "Environment Name"
+    AllowedValues:
+      - development
+      - sandbox
+      - staging
+      - production
+    Default: staging
+  
+  redshiftpassword:
+    Type: String
+    NoEcho: true
+    Description: "Enter redshift master password"
+  
+  bucketname:
+    Type: String
+    Description: "Enter bucket name where your lambda zip file resides"
+    Default: staging-bu-datalake-lambda-code 
+
+Resources:
+
+  BUDataLakeIngestionFirehoseRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+              - firehose.amazonaws.com
+          Action:
+            - 'sts:AssumeRole'
+      Path: /service-role/
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonKinesisFirehoseFullAccess
+        - arn:aws:iam::aws:policy/AWSLambdaFullAccess
+      RoleName: 'bu-datalake-ingestion-firehose'
+
+  BUDataLakeIngestionLambdaRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+              - lambda.amazonaws.com
+          Action:
+            - 'sts:AssumeRole'
+      Path: /service-role/
+      RoleName: 'bu-datalake-ingestion-lambda'
+  
+  BUDataLakeIngestionLambdaCWPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: bu-datalake-ingestion-cw-w
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+         - Effect: Allow
+           Action:
+             - 'logs:CreateLogGroup'
+             - 'logs:CreateLogStream'
+             - 'logs:PutLogEvents'             
+           Resource: 
+             - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/bu-datalake-parser:*:*"
+             - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/bu-datalake-parser:log-stream:*"
+             
+      Roles:
+        - !Ref BUDataLakeIngestionLambdaRole   
+  
+  BUDataLakeIngestionLambdaKFHPolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: bu-datalake-ingestion-kfh-w
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+         - Effect: Allow
+           Action:
+            - "firehose:PutRecord"
+            - "firehose:PutRecordBatch"      
+           Resource: !Sub "arn:aws:firehose:${AWS::Region}:${AWS::AccountId}:deliverystream/bu-datalake-ingestion-deliverystream"
+            
+      Roles:
+        - !Ref BUDataLakeIngestionLambdaRole
+
+  BUDataLakeIngestionLambdaS3Policy:
+    Type: 'AWS::IAM::Policy'
+    Properties:
+      PolicyName: bu-datalake-ingestion-s3-w
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+         - Effect: Allow
+           Action:
+             - 's3:AbortMultipartUpload'
+             - 's3:GetBucketLocation'
+             - 's3:GetObject'
+             - 's3:ListBucket'
+             - 's3:ListBucketMultipartUploads'
+             - 's3:PutObject'      
+           Resource:
+             - !Sub 'arn:aws:s3:::${EnvironmentName}-budatalake-${AWS::AccountId}'
+             - !Sub 'arn:aws:s3:::${EnvironmentName}-buetlprocessing-${AWS::AccountId}'
+             - '*'
+            
+      Roles:
+        - !Ref BUDataLakeIngestionLambdaRole
+
+  BUDataLakeIngestionLambdaLogGroup: 
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: '/aws/lambda/bu-datalake-parser'
+
+  BUDataLakeIngestionKinesisLogGroup: 
+    Type: "AWS::Logs::LogGroup"
+    Properties:
+      LogGroupName: '/aws/kinesisfirehose/bu-datalake-ingestion-deliverystream'
+  # log stream for Redshift errors
+  BUDataLakeIngestionRedshiftDeliveryLogStream: 
+    Type: "AWS::Logs::LogStream"
+    Properties: 
+      LogGroupName: !Ref 'BUDataLakeIngestionKinesisLogGroup'  
+      LogStreamName: "RedshiftDelivery"
+  # log stream for s3 errors
+  BUDataLakeIngestionS3DeliveryLogStream: 
+    Type: "AWS::Logs::LogStream"
+    Properties: 
+      LogGroupName: !Ref 'BUDataLakeIngestionKinesisLogGroup'   
+      LogStreamName: "S3Delivery"
+  
+  BUDataLakeIngestionInvokePermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      Principal: 'firehose.amazonaws.com'
+      SourceArn: 
+        Fn::GetAtt:
+          - 'BUDatalakeIngestionStream'
+          - 'Arn'
+      FunctionName: 
+        Fn::GetAtt: 
+          - 'BUDataLakeIngestionLambda'
+          - 'Arn' 
+  
+  BUDataLakeIngestionLambda:
+    Type: 'AWS::Lambda::Function'
+    DependsOn: BUDataLakeIngestionLambdaRole 
+    Properties:
+      Code:
+        S3Bucket: !Ref bucketname
+        S3Key: 'bu-datalake-ingestion-1.0.0.jar'      
+      Description: 'Parses BU assesment messages from Kinesis data stream'
+      FunctionName: 'bu-datalake-parser'
+      Environment:
+        Variables:
+          var_dl_bucket: !Sub ${EnvironmentName}-budatalake-${AWS::AccountId}
+          var_etl_bucket: !Sub ${EnvironmentName}-buetlprocessing-${AWS::AccountId}
+      Handler: "com.bec.bu.datalake.AssessmentMessageHandler::handleRequest"
+      MemorySize: '256'
+      Role: 
+        Fn::GetAtt:
+          - 'BUDataLakeIngestionLambdaRole'
+          - 'Arn'
+      Runtime: 'java8'
+      Timeout: '300'  
+
+  BUDatalakeIngestionStream:
+    Type: "AWS::KinesisFirehose::DeliveryStream"
+    Properties:
+
+      DeliveryStreamName: 'bu-datalake-ingestion-deliverystream'
+      DeliveryStreamType: 'DirectPut' 
+
+      RedshiftDestinationConfiguration:        
+        CloudWatchLoggingOptions:
+          Enabled: true
+          LogGroupName: '/aws/kinesisfirehose/bu-datalake-ingestion-deliverystream'
+          LogStreamName: "RedshiftDelivery"        
+        ProcessingConfiguration:
+          Enabled: true
+          Processors:
+            - Parameters:
+                - ParameterName: LambdaArn
+                  ParameterValue:
+                    Fn::GetAtt: 
+                      - 'BUDataLakeIngestionLambda'
+                      - 'Arn'
+              Type: Lambda
+        RoleARN: 
+          Fn::GetAtt: 
+            - 'BUDataLakeIngestionFirehoseRole'
+            - 'Arn'        
+        S3Configuration:
+          CloudWatchLoggingOptions: 
+            Enabled: true
+            LogGroupName: '/aws/kinesisfirehose/bu-datalake-ingestion-deliverystream'
+            LogStreamName: "S3Delivery"
+          BucketARN: 
+            Fn::ImportValue: !Sub "${EnvironmentName}:BUDatalakeIngestionStreamS3BucketARN"
+          CompressionFormat: "UNCOMPRESSED"          
+          Prefix: 'bu-redshift-load/'
+          BufferingHints:
+            SizeInMBs: 3
+            IntervalInSeconds: 60
+          RoleARN: 
+            Fn::GetAtt: 
+              - 'BUDataLakeIngestionFirehoseRole'
+              - 'Arn'        
+        ClusterJDBCURL: 
+          Fn::ImportValue: !Sub "${EnvironmentName}-BUDWJDBCURL"        
+        CopyCommand:  
+          CopyOptions: json 'auto' TRUNCATECOLUMNS blanksasnull emptyasnull
+          DataTableName: 'bec_edw.bu_assessment_reporting_detail'
+          DataTableColumns: 'test_id,bu_district_id,bu_school_id,bu_assignment_id,student_id,start_time,end_time,collective_noun_id,status,test_score,grade,created_at,updated_at,deleted,component_code,component_title,created_by_id,elapsed_time,version,keyword,identifier,feedback,max_score,interaction_id,instances_interaction_id,graded_by,correct_response,response_identifier,response,score,standards,strands,skillname,claimsandtargets,dok,min_score,comments'        
+        Username: 'master'
+        Password: !Ref redshiftpassword
+        
+Outputs:
+  BUKFHARN:
+    Description: BU Kinesis firehose ARN
+    Value:
+      Fn::GetAtt:
+          - 'BUDatalakeIngestionStream'
+          - 'Arn'
+    Export:
+      Name: !Sub '${EnvironmentName}-BUKFHARN' 
+  BUParserLambdaARN:
+    Description: BU datalake parser lambda ARN
+    Value:
+      Fn::GetAtt:
+          - 'BUDataLakeIngestionLambda'
+          - 'Arn'
+    Export:
+      Name: !Sub '${EnvironmentName}-BUDatalakeParserLambdaARN'
+
+  

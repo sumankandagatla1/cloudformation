@@ -1,0 +1,127 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Creates S3 buckets for ReportingSite & www. bucket with bucket policy, Cloudfront distribution, Route53 Zone and Route53 recordset. 
+
+# Input parameters
+Parameters:  
+  EnvironmentName:
+    Type: String
+    Description: "Environment Name"
+    AllowedValues:
+      - development
+      - sandbox
+      - staging
+      - production
+    Default: staging
+  DomainName:
+    Type: String
+    Description: Domain name of your website example 'becreporting.com'
+    AllowedPattern: (?!-)[a-zA-Z0-9-.]{1,63}(?<!-)
+    ConstraintDescription: Enter a valid domain name.  
+
+# Static s3 zone id and endpoint for us-east-1, doesn't change untill for a different region.  
+Mappings:
+  RegionMap:
+    us-east-1:
+      S3HostedZoneId: Z3AQBSTGFYJSTF
+      S3DomainName: s3-website-us-east-1.amazonaws.com
+    
+Resources:
+  
+  # Create Bucket (application will be deployed to this bucket).
+  ReportingSiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref 'DomainName'
+      AccessControl: PublicRead
+      WebsiteConfiguration:
+        IndexDocument: index.html
+        ErrorDocument: error.html
+    DeletionPolicy: Retain
+  
+  # Allow public access to bucket
+  ReportingSiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref 'ReportingSiteBucket'
+      PolicyDocument:
+        Statement:
+        - Sid: PublicReadForGetBucketObjects
+          Effect: Allow
+          Principal: '*'
+          Action: s3:GetObject
+          Resource: !Join ['', ['arn:aws:s3:::', !Ref 'ReportingSiteBucket', /*]]
+  
+  # Create www bucket for site redirection and to allow www.*
+  ReportingSiteWWWBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub
+          - www.${Domain}
+          - Domain: !Ref DomainName
+      AccessControl: BucketOwnerFullControl
+      WebsiteConfiguration:
+        RedirectAllRequestsTo:
+          HostName: !Ref ReportingSiteBucket 
+        
+  # Create a Cloud front distribution for the s3 site, redirects http to https 
+  ReportingsiteCloudfrontDistribution:
+    Type: AWS::CloudFront::Distribution    
+    Properties:
+      DistributionConfig:
+        Comment: Cloudfront Distribution pointing to S3 bucket
+        Origins:
+        - DomainName: !Select [2, !Split ["/", !GetAtt ReportingSiteBucket.WebsiteURL]]
+          Id: S3Origin
+          CustomOriginConfig:
+            HTTPPort: '80'
+            HTTPSPort: '443'
+            OriginProtocolPolicy: http-only
+        Enabled: true
+        HttpVersion: 'http2'
+        DefaultRootObject: index.html
+        Aliases:
+        - !Ref 'DomainName'
+        DefaultCacheBehavior:
+          AllowedMethods:
+          - GET
+          - HEAD
+          Compress: true
+          TargetOriginId: S3Origin
+          ForwardedValues:
+            QueryString: true
+            Cookies:
+              Forward: none
+          ViewerProtocolPolicy: redirect-to-https
+        PriceClass: PriceClass_All
+        ViewerCertificate:
+          AcmCertificateArn: 
+            Fn::ImportValue: !Sub "${EnvironmentName}-SiteCertARN"
+          SslSupportMethod: sni-only
+
+  ReportingSiteDNSName:
+    Type: AWS::Route53::RecordSetGroup
+    Properties:
+      HostedZoneName: !Join ['', [!Ref 'DomainName', .]]
+      RecordSets:
+      - Name: !Ref DomainName
+        Type: A
+        AliasTarget:
+          HostedZoneId: Z2FDTNDATAQYW2             
+          DNSName: !GetAtt [ReportingsiteCloudfrontDistribution, DomainName]
+
+Outputs:
+  ReportingSite:
+    Value: !Ref ReportingSiteBucket
+    Description: Name of S3 bucket to hold website content
+    Export:
+      Name: !Sub ${EnvironmentName}-ReportingSite
+  CloudfrontEndpoint:
+    Value: !GetAtt [ReportingsiteCloudfrontDistribution, DomainName]
+    Description: Endpoint for Cloudfront distribution
+    Export:
+      Name: !Sub ${EnvironmentName}-CloudfrontEndpoint
+  ReportingSiteDomainName:
+    Value: !Ref DomainName
+    Description: Domain Name
+    Export:
+      Name: !Sub ${EnvironmentName}-ReportingSiteDomainName
