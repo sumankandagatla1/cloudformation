@@ -153,7 +153,8 @@ Resources:
   # Create ECS Cluster
   ECSCluster:
     Type: AWS::ECS::Cluster
-    ClusterName: !Sub ${EnvironmentName}-ar-api-cluster
+    Properties:
+      ClusterName: !Sub ${EnvironmentName}-ar-api-cluster
   ContainerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:

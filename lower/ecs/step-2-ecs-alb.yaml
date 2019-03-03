@@ -73,8 +73,17 @@ Resources:
       LoadBalancerArn: !Ref 'PublicLoadBalancer'
       Port: 5020
       Protocol: HTTPS
+  buapirepo:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: 'ear-api'
 
 Outputs:
+  BUAPIRepo:
+    Description: url of the ecr repo with docker image
+    Value: !Ref buapirepo
+    Export:
+      Name: !Sub ${EnvironmentName}:BUAPIRepo
   PublicListener:
     Description: The ARN of the public load balancer's Listener
     Value: !Ref PublicLoadBalancerListener
