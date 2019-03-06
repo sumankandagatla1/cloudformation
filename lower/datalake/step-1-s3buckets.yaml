@@ -18,27 +18,27 @@ Resources:
   BUDatalakeIngestionStreamS3Bucket:
     Type: 'AWS::S3::Bucket'
     Properties:
-      BucketName: !Sub ${EnvironmentName}-bu-redshift-load-${AWS::AccountId}
+      BucketName: !Sub ${EnvironmentName}-bu-redshift-load-${AWS::Region}
   
   BUDatalakeBucket:
     Type: 'AWS::S3::Bucket'
     Properties:
-      BucketName: !Sub ${EnvironmentName}-budatalake-${AWS::AccountId}
+      BucketName: !Sub ${EnvironmentName}-budatalake-${AWS::Region}
 
   BUETLProcessingBucket:
     Type: 'AWS::S3::Bucket'
     Properties:
-      BucketName: !Sub ${EnvironmentName}-buetlprocessing-${AWS::AccountId}
+      BucketName: !Sub ${EnvironmentName}-buetlprocessing-${AWS::Region}
 
   BURedshiftloadunloadBucket:
     Type: 'AWS::S3::Bucket'
     Properties:
-      BucketName: !Sub ${EnvironmentName}-bu-redshift-load-unload-${AWS::AccountId}
+      BucketName: !Sub ${EnvironmentName}-bu-redshift-load-unload-${AWS::Region}
 
   BULambdaCodeBucket:
     Type: 'AWS::S3::Bucket'
     Properties:
-      BucketName: !Sub ${EnvironmentName}-bu-parser-lambda-code-${AWS::AccountId}
+      BucketName: !Sub ${EnvironmentName}-bu-parser-lambda-code-${AWS::Region}
 
 Outputs:
 

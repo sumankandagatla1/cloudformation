@@ -12,6 +12,19 @@ Parameters:
       - production
     Default: staging
 
+  VpcId:
+    Type : 'AWS::EC2::VPC::Id'
+    Description : Exisitng VPC from your region
+    ConstraintDescription : Must be an existing VPC
+
+  PublicSubnets:
+    Type: 'List<AWS::EC2::Subnet::Id>'
+    Description: The list of SubnetIds in your VPCs
+    ConstraintDescription: >-
+      must be a list of at least two existing public subnets associated with at least
+      two different availability zones. They should be residing in the selected
+      VPC. 
+
   CertificateArn:
     Type: String
     Description: "Enter the ACM certificate ARN"
@@ -30,8 +43,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Access to the public facing load balancer
-      VpcId:
-        Fn::ImportValue: !Sub ${EnvironmentName}:VpcId
+      VpcId: !Ref VpcId
       SecurityGroupIngress:          
           - CidrIp: 0.0.0.0/0
             IpProtocol: -1
@@ -42,9 +54,7 @@ Resources:
       LoadBalancerAttributes:
       - Key: idle_timeout.timeout_seconds
         Value: '30'
-      Subnets:        
-        - Fn::ImportValue: !Sub ${EnvironmentName}:PublicSubnetOne
-        - Fn::ImportValue: !Sub ${EnvironmentName}:PublicSubnetTwo
+      Subnets: !Ref PublicSubnets
       SecurityGroups: [!Ref 'PublicLoadBalancerSG']
  
   BUAPITargetGroup:
@@ -58,8 +68,7 @@ Resources:
       Port: 80
       Protocol: HTTP
       UnhealthyThresholdCount: 2
-      VpcId:
-        Fn::ImportValue: !Sub ${EnvironmentName}:VpcId
+      VpcId: !Ref VpcId
   PublicLoadBalancerListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     DependsOn:
@@ -76,7 +85,7 @@ Resources:
   buapirepo:
     Type: AWS::ECR::Repository
     Properties:
-      RepositoryName: 'ar-api'
+      RepositoryName: 'aar-api'
 
 Outputs:
   BUAPIRepo:

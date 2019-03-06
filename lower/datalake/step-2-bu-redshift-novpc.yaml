@@ -1,0 +1,197 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Provisions Redshift cluster, VPC, subnet group, security group, parameter group, KMS key
+
+Parameters:
+  
+  EnvironmentName:
+    Type: String
+    Description: "Environment Name"
+    AllowedValues:
+      - development
+      - sandbox
+      - staging
+      - production
+    Default: staging
+
+  VpcId:
+    Type : 'AWS::EC2::VPC::Id'
+    Description : Exisitng VPC from your region
+    ConstraintDescription : Must be an existing VPC
+
+  PublicSubnets:
+    Type: 'List<AWS::EC2::Subnet::Id>'
+    Description: The list of SubnetIds in your VPCs
+    ConstraintDescription: >-
+      Must be a list of at least two existing public subnets associated with at least
+      two different availability zones. They should be residing in the selected
+      VPC.
+
+  KMSKeyAdmin:
+    Type : String
+    Description : IAM user ARN for managing the KMS Key
+
+  NumberOfNodes:
+    Description: Enter number of nodes needed in the cluster
+    Type: Number
+    Default: '2'
+  NodeType:
+    Description: Select the instance type for the nodes
+    Type: String
+    Default: ds2.xlarge
+    AllowedValues:
+    - ds2.xlarge
+    - ds2.8xlarge
+    - dc1.large
+    - dc1.8xlarge
+  PortNumber:
+    Description: Enter the port number, 5439 Default is recommended
+    Type: Number
+    Default: 5439
+  MasterUserPassword:
+    Description: Enter password. Do not forget this password.
+    Type: String
+    NoEcho: 'true'
+  InboundTraffic:
+    Description: Allow inbound traffic to the cluster from this CIDR range.
+    Type: String
+    MinLength: '9'
+    MaxLength: '18'
+    Default: 0.0.0.0/0
+    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
+    ConstraintDescription: must be a valid CIDR range of the form x.x.x.x/x.
+  
+Resources:
+  # Create KMS key for encryption, this key will be used by Redshift to encrypt data at rest
+  BUDWKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/budwkey
+      TargetKeyId:
+        Ref: BUDWKey
+  
+  # Will harden access to resources in production for security
+  BUDWKey: 
+    Type: AWS::KMS::Key
+    Properties: 
+      Description: "Key to encrypt BU DW data"
+      KeyPolicy: 
+        Version: "2012-10-17"
+        Id: "key-default-1"
+        Statement: 
+          - 
+            Sid: "Allow administration of the key"
+            Effect: "Allow"
+            Principal:   
+              AWS: !Ref KMSKeyAdmin
+            Action: 
+              - "kms:Create*"
+              - "kms:Describe*"
+              - "kms:Enable*"
+              - "kms:List*"
+              - "kms:Put*"
+              - "kms:Update*"
+              - "kms:Revoke*"
+              - "kms:Disable*"
+              - "kms:Get*"
+              - "kms:Delete*"
+              - "kms:ScheduleKeyDeletion"
+              - "kms:CancelKeyDeletion"
+            Resource: "*"
+          - 
+            Sid: "Allow use of the key"
+            Effect: "Allow"
+            Principal: 
+              AWS: !Ref KMSKeyAdmin
+            Action: 
+              - "kms:Encrypt"
+              - "kms:Decrypt"
+              - "kms:ReEncrypt*"
+              - "kms:GenerateDataKey*"
+              - "kms:DescribeKey"
+            Resource: "*"
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group
+      SecurityGroupIngress:
+      - CidrIp: !Ref InboundTraffic
+        FromPort: !Ref PortNumber
+        ToPort: !Ref PortNumber
+        IpProtocol: tcp
+      VpcId: !Ref VpcId
+  BUDWRedshiftCluster:
+    Type: AWS::Redshift::Cluster
+    Properties:
+      ClusterType: "multi-node"
+      NumberOfNodes: !Ref NumberOfNodes
+      NodeType: !Ref NodeType
+      ClusterIdentifier: !Sub '${EnvironmentName}-budw'
+      DBName: 'ardb'
+      MasterUsername: 'master'
+      MasterUserPassword: !Ref MasterUserPassword
+      ClusterParameterGroupName: !Ref RedshiftClusterParameterGroup
+      VpcSecurityGroupIds: 
+        - !Ref SecurityGroup
+      ClusterSubnetGroupName: !Ref RedshiftClusterSubnetGroupName
+      PubliclyAccessible: 'true'
+      Port: 5439
+      Encrypted: true
+      KmsKeyId: !Ref BUDWKey
+      Tags:
+        - Key: Name
+          Value: budw-stg 
+  
+  RedshiftClusterParameterGroup:
+    Type: AWS::Redshift::ClusterParameterGroup
+    Properties:
+      Description: Cluster parameter group
+      ParameterGroupFamily: redshift-1.0
+      Parameters:
+      - ParameterName: enable_user_activity_logging
+        ParameterValue: 'true'
+  
+  RedshiftClusterSubnetGroupName:
+    Type: AWS::Redshift::ClusterSubnetGroup
+    Properties:
+      Description: Cluster subnet group
+      SubnetIds: !Ref PublicSubnets
+      Tags:
+        - Key: Name
+          Value: BudwClusterSubnetGroup
+  
+Outputs:
+  
+  ClusterEndpoint:
+    Description: Cluster endpoint
+    Value: !Sub "${BUDWRedshiftCluster.Endpoint.Address}:${BUDWRedshiftCluster.Endpoint.Port}/ardb"
+    Export:
+      Name: !Sub '${EnvironmentName}-BUDWEndpoint'
+  ClusterJDBCURL:
+    Description: Cluster endpoint
+    Value: !Sub "jdbc:redshift://${BUDWRedshiftCluster.Endpoint.Address}:${BUDWRedshiftCluster.Endpoint.Port}/ardb"
+    Export:
+      Name: !Sub '${EnvironmentName}-BUDWJDBCURL'
+  ClusterName:
+    Description: Name of cluster
+    Value: !Ref BUDWRedshiftCluster
+    Export:
+      Name: !Sub '${EnvironmentName}-ClusterIdentifier'
+  ParameterGroupName:
+    Description: Name of parameter group
+    Value: !Ref RedshiftClusterParameterGroup
+  RedshiftClusterSubnetGroupName:
+    Description: Name of cluster subnet group
+    Value: !Ref RedshiftClusterSubnetGroupName
+  RedshiftClusterSecurityGroupName:
+    Description: Name of cluster security group
+    Value: !Ref SecurityGroup
+  BUDWKeyARN: 
+    Description: The ARN of the BUDWKey
+    Value: !GetAtt BUDWKey.Arn
+    Export:
+      Name: !Sub '${EnvironmentName}-BUDWKeyARN'
+
+
+
+

@@ -1,0 +1,50 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: An internal service discovery namespace
+Parameters:
+  EnvironmentName:
+    Type: String
+    Description: "Environment Name"
+    AllowedValues:
+      - development
+      - sandbox
+      - staging
+      - production
+    Default: staging
+  Domain:
+    Type: String
+    Default: service.staging
+    AllowedValues:
+      - service.development
+      - service.sandbox
+      - service.staging
+      - service.production
+    Description: The name of the namespace. Services are prepended, for example user.service.production
+  VpcId:
+    Type : 'AWS::EC2::VPC::Id'
+    Description : Exisitng VPC from your region
+    ConstraintDescription : Must be an existing VPC
+Resources:
+  EcsSecurityGroupIngressFromSelf:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      Description: Ingress from other containers in the cluster
+      GroupId:
+        Fn::ImportValue: !Sub ${EnvironmentName}:ContainerSecurityGroup
+      IpProtocol: -1
+      SourceSecurityGroupId:
+        Fn::ImportValue: !Sub ${EnvironmentName}:ContainerSecurityGroup
+
+  ServiceDiscoveryNamespace:
+    Type: AWS::ServiceDiscovery::PrivateDnsNamespace
+    Properties:
+      Name: !Ref Domain
+      Vpc: !Ref VpcId
+
+Outputs:
+  PrivateServiceDiscoveryNamespace:
+    Description: The ID of the private service discovery namespace
+    Value: !Ref ServiceDiscoveryNamespace
+    Export:
+      Name: !Sub ${EnvironmentName}:PrivateServiceDiscoveryNamespace
+
+

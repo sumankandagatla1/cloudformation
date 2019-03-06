@@ -109,8 +109,8 @@ Resources:
              - 's3:ListBucketMultipartUploads'
              - 's3:PutObject'      
            Resource:
-             - !Sub 'arn:aws:s3:::${EnvironmentName}-budatalake-${AWS::AccountId}'
-             - !Sub 'arn:aws:s3:::${EnvironmentName}-buetlprocessing-${AWS::AccountId}'
+             - !Sub 'arn:aws:s3:::${EnvironmentName}-budatalake-${AWS::Region}'
+             - !Sub 'arn:aws:s3:::${EnvironmentName}-buetlprocessing-${AWS::Region}'
              - '*'
             
       Roles:
@@ -163,8 +163,9 @@ Resources:
       FunctionName: 'bu-datalake-parser'
       Environment:
         Variables:
-          var_dl_bucket: !Sub ${EnvironmentName}-budatalake-${AWS::AccountId}
-          var_etl_bucket: !Sub ${EnvironmentName}-buetlprocessing-${AWS::AccountId}
+          var_dl_bucket: !Sub ${EnvironmentName}-budatalake-${AWS::Region}
+          var_etl_bucket: !Sub ${EnvironmentName}-buetlprocessing-${AWS::Region}
+          var_s3_region: !Sub ${AWS::Region}
       Handler: "com.bec.bu.datalake.AssessmentMessageHandler::handleRequest"
       MemorySize: '256'
       Role: 
